@@ -16,7 +16,7 @@ Built as a working reference for what production-shape agentic workflows look li
 
 Real production agents fail in legible ways. A graph with named nodes (rather than a single LLM call wrapped in retries) makes failure isolatable: you can see which node returned low confidence, retry just that node, swap models per node, or add a human-in-the-loop step exactly where it's needed.
 
-This is the same shape as the AI tooling I shipped at Infotech (Claude API automation for client legacy migrations), translated into the LangChain stack.
+The shape is the same one used in most production AI tooling I've shipped: small, named, observable steps you can reason about one at a time.
 
 ## Run it
 
@@ -73,6 +73,16 @@ You'll see the agent's decisions printed in the terminal, and full traces in you
            │ done │  │ human_review │
            └──────┘  └──────────────┘
 ```
+
+## Sample LangSmith Trace
+
+Every run produces a full trace tree in LangSmith — inputs, outputs, latency, and token count per node. This is what an interviewer or reviewer can use to verify the agent's reasoning end-to-end.
+
+![LangSmith trace of one triage run](docs/langsmith-trace.png)
+
+In the screenshot above, you can see the full path for one ticket as it flowed through the graph: `classify → retrieve → draft → confidence_check → done`. Each node is its own span with its own latency and cost. Low-confidence runs branch to `human_review` instead, and that path is just as visible.
+
+> **To capture your own trace:** run the demo with `LANGSMITH_TRACING=true` in `.env`, then open https://smith.langchain.com → the `customer-triage-demo` project → click any run → expand the trace tree → take a screenshot and save it as `docs/langsmith-trace.png` (replacing the placeholder).
 
 ## Next steps (would-be features for a real deployment)
 

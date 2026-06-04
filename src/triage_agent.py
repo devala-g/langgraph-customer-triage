@@ -29,7 +29,7 @@ MODEL = ChatAnthropic(
     max_tokens=512,
 )
 
-Category = Literal["billing", "technical", "vague"]
+Category = Literal["billing", "technical", "vague"] #hard coded. add more for a more fleshed-out version
 
 
 class TriageState(TypedDict):
