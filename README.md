@@ -80,7 +80,7 @@ Every run produces a full trace tree in LangSmith — inputs, outputs, latency, 
 
 ![LangSmith trace of one triage run](docs/langsmith-trace.png)
 
-In the screenshot above, you can see the full path for one ticket as it flowed through the graph: `classify → retrieve → draft → confidence_check → done`. Each node is its own span with its own latency and cost. Low-confidence runs branch to `human_review` instead, and that path is just as visible.
+In the screenshot above, you can see the full path for one billing ticket as it flowed through the graph: `classify → retrieve → draft → confidence_check → human_review`. Each node is its own span with its own latency and cost, and each `ChatAnthropic` call is nested under its parent node. The draft generated successfully, but the confidence node graded it below the 0.7 threshold, so the graph correctly escalated to human review rather than auto-send a low-confidence reply — exactly the safety behavior this design is built for. High-confidence runs branch to `done` instead, and that path is just as visible.
 
 > **To capture your own trace:** run the demo with `LANGSMITH_TRACING=true` in `.env`, then open https://smith.langchain.com → the `customer-triage-demo` project → click any run → expand the trace tree → take a screenshot and save it as `docs/langsmith-trace.png` (replacing the placeholder).
 
