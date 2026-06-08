@@ -60,7 +60,8 @@ def classify(state: TriageState) -> dict:
 
 
 def retrieve(state: TriageState) -> dict:
-    """Pull matching KB entries. Vague tickets skip retrieval."""
+    """Pull KB entries via semantic search over Chroma, filtered by category.
+    Vague tickets skip retrieval and route straight to escalation downstream."""
     if state["category"] == "vague":
         return {"kb_hits": []}
     hits = search(state["category"], state["ticket"])

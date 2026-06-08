@@ -1,6 +1,21 @@
-"""Tiny in-memory KB. Stand-in for a real vector store."""
+"""Knowledge base + semantic retrieval over Chroma.
 
-KB = [
+Earlier versions of this file used naive keyword filtering for retrieval. This
+version uses a real vector store (Chroma) with the default sentence-transformer
+embedding function, filtered by category metadata. The public `search()`
+signature is unchanged so the rest of the graph (see triage_agent.py) does not
+need to know the retrieval backend was swapped.
+
+Embedding model: chromadb's default `all-MiniLM-L6-v2` runs locally with no
+API key. First run downloads the model (~80 MB); subsequent runs are instant.
+"""
+
+from __future__ import annotations
+
+import chromadb
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+KB: list[dict] = [
     {
         "id": "kb-billing-001",
         "category": "billing",
@@ -43,14 +58,58 @@ KB = [
 ]
 
 
-def search(category: str, query: str) -> list[dict]:
-    """Naive keyword filter against the KB. Real version = vector retrieval."""
-    query_terms = {t.lower() for t in query.split()}
-    matches = []
-    for entry in KB:
-        if entry["category"] != category:
-            continue
-        haystack = (entry["title"] + " " + entry["body"]).lower()
-        if any(term in haystack for term in query_terms):
-            matches.append(entry)
-    return matches[:2]
+_COLLECTION = None
+
+
+def _collection():
+    """Lazily build (or fetch) the Chroma collection on first use.
+
+    We instantiate the embedding function explicitly (rather than letting the
+    collection build it lazily) so any model-load failure surfaces here at
+    setup time instead of being swallowed during a later query.
+    """
+    global _COLLECTION
+    if _COLLECTION is not None:
+        return _COLLECTION
+
+    embed_fn = DefaultEmbeddingFunction()
+    client = chromadb.Client()  # in-memory; survives only the current process
+    col = client.get_or_create_collection(name="knowledge_base", embedding_function=embed_fn)
+
+    # First time only: index every KB entry. Chroma embeds on insert. We index
+    # the title + body together so the embedding sees the full semantic
+    # context, and we store the category as metadata so we can filter by it
+    # at query time.
+    if col.count() == 0:
+        col.add(
+            ids=[e["id"] for e in KB],
+            documents=[f"{e['title']}. {e['body']}" for e in KB],
+            metadatas=[{"category": e["category"], "title": e["title"]} for e in KB],
+        )
+
+    _COLLECTION = col
+    return col
+
+
+def search(category: str, query: str, top_k: int = 2) -> list[dict]:
+    """Return the top-k KB entries whose semantic similarity to `query` is
+    highest, restricted to entries tagged with `category`.
+
+    Returns dicts with the same shape as the raw KB entries (id, category,
+    title, body) so the rest of the agent graph stays unchanged.
+
+    Errors are intentionally NOT caught here — let them propagate so the agent
+    runs surface real failures rather than silently escalating every ticket.
+    """
+    results = _collection().query(
+        query_texts=[query],
+        n_results=top_k,
+        where={"category": category},
+    )
+
+    hit_ids = (results.get("ids") or [[]])[0]
+    if not hit_ids:
+        return []
+
+    by_id = {e["id"]: e for e in KB}
+    return [by_id[i] for i in hit_ids if i in by_id]

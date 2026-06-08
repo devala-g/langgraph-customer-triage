@@ -1,12 +1,13 @@
-# Customer Support Triage Agent (LangGraph + LangSmith)
+# Customer Support Triage Agent (LangGraph + LangSmith + Chroma RAG)
 
-A small, end-to-end LangGraph agent that triages an inbound customer-support message: classifies it, looks up relevant info in a tiny in-memory knowledge base, drafts a reply, checks its own confidence, and escalates to a human if it isn't sure.
+A small, end-to-end LangGraph agent that triages an inbound customer-support message: classifies it, retrieves grounded context from a vector store, drafts a reply, checks its own confidence, and escalates to a human if it isn't sure.
 
 Built as a working reference for what production-shape agentic workflows look like with the LangChain stack. Every node emits LangSmith traces so the full decision path is observable.
 
 ## What this shows
 
 - **LangGraph for orchestration** — a `StateGraph` with branching logic (`classify → retrieve → draft → confidence_check → human_review | done`). Failure modes are explicit nodes, not exceptions.
+- **Chroma vector store for RAG** — semantic retrieval over a small knowledge base, filtered by ticket category at query time. Same `search()` interface used to be keyword-based; swapping to a vector backend did not require any change to the graph.
 - **Tool use via the Claude API** through `langchain-anthropic`.
 - **LangSmith observability** — every run produces a full trace tree with inputs, outputs, latency, and token counts per node.
 - **Simple state model** — `TypedDict` state passes through the graph, mutated by each node.
@@ -56,12 +57,12 @@ You'll see the agent's decisions printed in the terminal, and full traces in you
             └──────┬──────┘
                    │
             ┌──────▼──────┐
-            │  retrieve   │  (look up matching KB entries)
-            └──────┬──────┘
+            │  retrieve   │  (Chroma semantic search,
+            └──────┬──────┘   filtered by category)
                    │
             ┌──────▼──────┐
-            │    draft    │  (compose reply with citations)
-            └──────┬──────┘
+            │    draft    │  (compose reply grounded in
+            └──────┬──────┘   retrieved KB entries, with citations)
                    │
             ┌──────▼──────┐
             │ confidence  │
@@ -86,8 +87,11 @@ In the screenshot above, you can see the full path for one billing ticket as it 
 
 ## Next steps (would-be features for a real deployment)
 
-- Swap the in-memory KB for a real vector store (Postgres + pgvector or Chroma)
-- Replace classification with a fine-tuned smaller model for cost
-- Add per-node retries with backoff
-- Wire `human_review` to a Slack channel via tool-calling
-- Add evals: golden-set of tickets, scored by GPT-judge in LangSmith
+- ✅ ~~Swap the in-memory KB for a real vector store~~ — done. Chroma with sentence-transformer embeddings, filtered by category metadata.
+- Add a **ReAct-style sub-agent** for vague tickets — instead of immediately escalating, reason through what clarifying information is needed and call a tool to look it up.
+- Persist the Chroma collection on disk (currently in-memory and rebuilt per process).
+- Replace classification with a fine-tuned smaller model for cost.
+- Add per-node retries with backoff.
+- Wire `human_review` to a Slack channel via tool-calling.
+- Add evals: golden-set of tickets, scored by an LLM-judge in LangSmith.
+- Deploy as a hosted endpoint (Modal, Render, etc.).
