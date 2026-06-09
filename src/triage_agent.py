@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import os
+import re
 import sys
 from typing import Literal, TypedDict
 
@@ -18,8 +19,16 @@ from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
+from langgraph.prebuilt import create_react_agent  # noqa: keep this import; the
+# `langchain.agents` replacement path suggested by the V1 deprecation warning
+# is not yet a drop-in import in our installed version. Re-evaluate at V2.
 
 from knowledge_base import search
+from tools import (
+    get_customer_recent_activity,
+    get_recent_system_status,
+    search_knowledge_base,
+)
 
 load_dotenv()
 
@@ -61,9 +70,8 @@ def classify(state: TriageState) -> dict:
 
 def retrieve(state: TriageState) -> dict:
     """Pull KB entries via semantic search over Chroma, filtered by category.
-    Vague tickets skip retrieval and route straight to escalation downstream."""
-    if state["category"] == "vague":
-        return {"kb_hits": []}
+    Only fires for billing and technical tickets; vague tickets are routed
+    to the ReAct sub-agent instead (see route_after_classify)."""
     hits = search(state["category"], state["ticket"])
     return {"kb_hits": hits}
 
@@ -91,26 +99,32 @@ def draft(state: TriageState) -> dict:
 
 
 def confidence_check(state: TriageState) -> dict:
-    """Ask the model to grade its own draft on a 0.0-1.0 scale."""
+    """Ask the model to grade its own draft on a 0.0-1.0 scale.
+
+    Defensive parsing: the model frequently adds prose or markdown around
+    the number even when told not to. We extract the first decimal number
+    from the response with a regex so a stray newline or comment doesn't
+    force us to fall back to 0.
+    """
     if state["draft_reply"] is None:
         return {"confidence": 0.0}
 
     system = SystemMessage(
         content=(
-            "Grade the draft reply's confidence on a 0.0-1.0 scale. "
+            "Grade the draft reply's confidence as a single decimal number "
+            "between 0.0 and 1.0. "
             "1.0 = directly answers the ticket using cited KB. "
             "0.0 = does not answer or is speculative. "
-            "Reply with only the number."
+            "Reply with ONLY the number (e.g. 0.85). No prose, no markdown."
         )
     )
     user = HumanMessage(
         content=f"Ticket:\n{state['ticket']}\n\nDraft:\n{state['draft_reply']}"
     )
     reply = MODEL.invoke([system, user])
-    try:
-        score = float(reply.content.strip())
-    except ValueError:
-        score = 0.0
+
+    match = re.search(r"\d*\.?\d+", reply.content)
+    score = float(match.group()) if match else 0.0
     return {"confidence": max(0.0, min(1.0, score))}
 
 
@@ -119,6 +133,53 @@ def route_on_confidence(state: TriageState) -> Literal["done", "human_review"]:
     if (state["confidence"] or 0.0) >= 0.7 and state["draft_reply"]:
         return "done"
     return "human_review"
+
+
+def route_after_classify(state: TriageState) -> Literal["retrieve", "react_agent"]:
+    """Branch right after classification: well-scoped categories (billing,
+    technical) go through the straight-line RAG path; vague tickets go to a
+    ReAct sub-agent that gathers context with tools before drafting."""
+    if state["category"] == "vague":
+        return "react_agent"
+    return "retrieve"
+
+
+# ---- ReAct sub-agent for vague tickets ----------------------------------------
+
+REACT_SYSTEM_PROMPT = """You are a customer support agent handling an \
+ambiguous ticket where you do not have enough context to answer directly.
+
+Your job: use the tools available to gather context, then draft a brief, \
+warm customer-facing reply that either (1) gives a likely answer if your \
+investigation gives you confidence, or (2) asks one focused clarifying \
+question, ideally enriched by the context you discovered.
+
+Keep replies to 3-5 sentences. Always close politely. Cite any KB article \
+IDs you used in brackets at the end. Do not make up information that the \
+tools did not return."""
+
+
+_REACT_EXECUTOR = create_react_agent(
+    model=MODEL,
+    tools=[
+        get_recent_system_status,
+        get_customer_recent_activity,
+        search_knowledge_base,
+    ],
+    prompt=REACT_SYSTEM_PROMPT,
+)
+
+
+def react_agent(state: TriageState) -> dict:
+    """Run a ReAct loop on a vague ticket. The agent reasons about what
+    context it needs, calls tools (zero, one, or many times) to gather it,
+    and then drafts a customer-facing reply. The reply lands in draft_reply
+    so the downstream confidence_check and routing nodes work unchanged."""
+    result = _REACT_EXECUTOR.invoke(
+        {"messages": [HumanMessage(content=state["ticket"])]}
+    )
+    final_message = result["messages"][-1]
+    return {"draft_reply": final_message.content.strip()}
 
 
 def finalize(state: TriageState) -> dict:
@@ -137,14 +198,28 @@ def build_graph():
     g.add_node("classify", classify)
     g.add_node("retrieve", retrieve)
     g.add_node("draft", draft)
+    g.add_node("react_agent", react_agent)
     g.add_node("confidence_check", confidence_check)
     g.add_node("done", finalize)
     g.add_node("human_review", escalate)
 
     g.set_entry_point("classify")
-    g.add_edge("classify", "retrieve")
+
+    # Branch right after classify: scoped categories go through the
+    # straight-line RAG path, vague tickets go to the ReAct sub-agent.
+    g.add_conditional_edges(
+        "classify",
+        route_after_classify,
+        {"retrieve": "retrieve", "react_agent": "react_agent"},
+    )
+
+    # RAG branch
     g.add_edge("retrieve", "draft")
     g.add_edge("draft", "confidence_check")
+
+    # ReAct branch — converges back at confidence_check
+    g.add_edge("react_agent", "confidence_check")
+
     g.add_conditional_edges(
         "confidence_check",
         route_on_confidence,
@@ -185,7 +260,7 @@ def run(ticket: str) -> None:
     print(f"TICKET     : {ticket}")
     print(f"CATEGORY   : {result['category']}")
     print(f"KB HITS    : {[e['id'] for e in result['kb_hits']]}")
-    print(f"CONFIDENCE : {result['confidence']:.2f}" if result["confidence"] else "CONFIDENCE : n/a")
+    print(f"CONFIDENCE : {result['confidence']:.2f}" if result["confidence"] is not None else "CONFIDENCE : n/a")
     print(f"DECISION   : {result['final_decision']}")
     if result["draft_reply"]:
         print(f"\nDRAFT REPLY:\n{result['draft_reply']}")

@@ -1,17 +1,18 @@
-# Customer Support Triage Agent (LangGraph + LangSmith + Chroma RAG)
+# Customer Support Triage Agent (LangGraph + LangSmith + Chroma RAG + ReAct)
 
-A small, end-to-end LangGraph agent that triages an inbound customer-support message: classifies it, retrieves grounded context from a vector store, drafts a reply, checks its own confidence, and escalates to a human if it isn't sure.
+A small, end-to-end LangGraph agent that triages an inbound customer-support message: classifies it, takes one of two paths depending on the category (RAG retrieval for well-scoped tickets, a ReAct sub-agent with tool use for vague ones), drafts a reply, checks its own confidence, and escalates to a human if it isn't sure.
 
-Built as a working reference for what production-shape agentic workflows look like with the LangChain stack. Every node emits LangSmith traces so the full decision path is observable.
+Built as a working reference for what production-shape agentic workflows look like with the LangChain stack. Every node — and every tool call inside the ReAct loop — emits LangSmith traces so the full decision path is observable.
 
 ## What this shows
 
-- **LangGraph for orchestration** — a `StateGraph` with branching logic (`classify → retrieve → draft → confidence_check → human_review | done`). Failure modes are explicit nodes, not exceptions.
-- **Chroma vector store for RAG** — semantic retrieval over a small knowledge base, filtered by ticket category at query time. Same `search()` interface used to be keyword-based; swapping to a vector backend did not require any change to the graph.
+- **LangGraph for orchestration** — a `StateGraph` with branching logic. Failure modes (and category-specific behavior) are explicit nodes, not exceptions or `if` statements buried inside one big function.
+- **Chroma vector store for RAG** — semantic retrieval over a small knowledge base, filtered by ticket category at query time. The `search()` interface used to be keyword-based; swapping to a vector backend did not require any change to the graph.
+- **ReAct sub-agent for vague tickets** — built with `langgraph.prebuilt.create_react_agent`. When the classifier returns `vague`, the agent enters a Reason → Act → Observe loop over three tools (system status, customer activity lookup, unrestricted KB search) before drafting a reply.
 - **Tool use via the Claude API** through `langchain-anthropic`.
-- **LangSmith observability** — every run produces a full trace tree with inputs, outputs, latency, and token counts per node.
+- **LangSmith observability** — every run produces a full trace tree with inputs, outputs, latency, and token counts per node. ReAct tool calls appear as nested spans, so you can audit the agent's reasoning step by step.
 - **Simple state model** — `TypedDict` state passes through the graph, mutated by each node.
-- **Tested with three sample tickets** — billing, technical, vague-and-needs-escalation.
+- **Tested with three sample tickets** — billing (RAG path), technical (RAG path), vague (ReAct path).
 
 ## Why this design
 
@@ -52,28 +53,45 @@ You'll see the agent's decisions printed in the terminal, and full traces in you
 ## Architecture
 
 ```
-            ┌─────────────┐
-   ticket → │  classify   │  (billing | technical | vague)
-            └──────┬──────┘
-                   │
-            ┌──────▼──────┐
-            │  retrieve   │  (Chroma semantic search,
-            └──────┬──────┘   filtered by category)
-                   │
-            ┌──────▼──────┐
-            │    draft    │  (compose reply grounded in
-            └──────┬──────┘   retrieved KB entries, with citations)
-                   │
-            ┌──────▼──────┐
-            │ confidence  │
-            │   check     │
-            └──┬───────┬──┘
-       high    │       │   low
-               ▼       ▼
-           ┌──────┐  ┌──────────────┐
-           │ done │  │ human_review │
-           └──────┘  └──────────────┘
+                 ┌─────────────┐
+        ticket → │  classify   │  (billing | technical | vague)
+                 └──────┬──────┘
+                        │
+        ┌───────────────┴───────────────┐
+   (billing/                          (vague)
+    technical)                          │
+        │                               ▼
+        ▼                       ┌───────────────┐
+┌──────────────┐                │  react_agent  │  ReAct loop:
+│   retrieve   │                │  - thought    │   thought → tool call →
+└──────┬───────┘                │  - tool call  │   observation → ... →
+       ▼                        │  - observation│   final answer
+┌──────────────┐                │  - repeat ... │
+│     draft    │                └───────┬───────┘
+└──────┬───────┘                        │
+       │                                │
+       └──────────────┬─────────────────┘
+                      ▼
+              ┌───────────────┐
+              │  confidence_  │
+              │     check     │
+              └──┬─────────┬──┘
+          high   │         │  low
+                 ▼         ▼
+             ┌──────┐   ┌──────────────┐
+             │ done │   │ human_review │
+             └──────┘   └──────────────┘
 ```
+
+### Tools available to the ReAct sub-agent
+
+| Tool | What it returns (stubbed for the demo) |
+|---|---|
+| `get_recent_system_status()` | Whether any services have had recent issues |
+| `get_customer_recent_activity(user_id)` | Mock recent orders / logins / errors for a user |
+| `search_knowledge_base(query)` | Semantic KB search, unrestricted by category |
+
+These are stubs that return canned data. In a real deployment, each function body would call a real API (status page, customer-data service, production KB). The shape doesn't change.
 
 ## Sample LangSmith Trace
 
@@ -88,8 +106,9 @@ In the screenshot above, you can see the full path for one billing ticket as it 
 ## Next steps (would-be features for a real deployment)
 
 - ✅ ~~Swap the in-memory KB for a real vector store~~ — done. Chroma with sentence-transformer embeddings, filtered by category metadata.
-- Add a **ReAct-style sub-agent** for vague tickets — instead of immediately escalating, reason through what clarifying information is needed and call a tool to look it up.
+- ✅ ~~Add a ReAct-style sub-agent for vague tickets~~ — done. `langgraph.prebuilt.create_react_agent` with three stubbed tools, branched off the `classify` node.
 - Persist the Chroma collection on disk (currently in-memory and rebuilt per process).
+- Replace the mocked tool stubs with real API calls (status page, customer-data service).
 - Replace classification with a fine-tuned smaller model for cost.
 - Add per-node retries with backoff.
 - Wire `human_review` to a Slack channel via tool-calling.
