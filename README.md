@@ -4,6 +4,12 @@ A small, end-to-end LangGraph agent that triages an inbound customer-support mes
 
 Built as a working reference for what production-shape agentic workflows look like with the LangChain stack. Every node — and every tool call inside the ReAct loop — emits LangSmith traces so the full decision path is observable.
 
+## Live demo
+
+**▶ Try it live: https://&lt;your-app&gt;.streamlit.app** *(hosted free on Streamlit Community Cloud)*
+
+Paste a support ticket — or pick a sample — and watch it route through the graph node by node: classify → retrieve (Chroma RAG) / ReAct → draft → confidence → auto-send or human review. The same graph in `src/` runs behind a small Streamlit UI in `streamlit_app.py`.
+
 ## What this shows
 
 - **LangGraph for orchestration** — a `StateGraph` with branching logic. Failure modes (and category-specific behavior) are explicit nodes, not exceptions or `if` statements buried inside one big function.
@@ -43,10 +49,36 @@ python src/triage_agent.py "My card was charged twice last Tuesday"
 
 You'll see the agent's decisions printed in the terminal, and full traces in your LangSmith project view.
 
+### Or run the web UI locally
+
+```bash
+streamlit run streamlit_app.py
+```
+
+## Deploy it yourself (Streamlit Community Cloud)
+
+The web UI deploys free from this repo — no Dockerfile, no server to manage:
+
+1. Make sure this repo is pushed to GitHub (it's public at the URL above).
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **Create app** → pick this repo, branch `master`, main file `streamlit_app.py`.
+3. Under **Advanced settings → Secrets**, paste your keys in TOML form (template in `.streamlit/secrets.toml.example`):
+   ```toml
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   # optional — turns on LangSmith tracing of every run
+   LANGSMITH_TRACING = "true"
+   LANGSMITH_API_KEY = "lsv2_..."
+   LANGSMITH_PROJECT = "customer-triage-demo"
+   ```
+4. **Deploy.** First boot downloads the Chroma embedding model (~80 MB), so the very first run takes a few extra seconds; it's cached after that.
+
+> The app makes live Claude API calls, so it caps runs per browser session. For a public link, set a spend limit on your Anthropic key as the real backstop.
+
 ## Files
 
+- `streamlit_app.py` — the web UI (deployed to Streamlit Community Cloud)
 - `src/triage_agent.py` — the full graph (≈140 lines)
-- `src/knowledge_base.py` — tiny in-memory KB stand-in
+- `src/knowledge_base.py` — knowledge base + Chroma semantic retrieval
+- `src/tools.py` — tools the ReAct sub-agent can call
 - `requirements.txt`
 - `.env.example`
 
@@ -113,4 +145,4 @@ In the screenshot above, you can see the full path for one billing ticket as it 
 - Add per-node retries with backoff.
 - Wire `human_review` to a Slack channel via tool-calling.
 - Add evals: golden-set of tickets, scored by an LLM-judge in LangSmith.
-- Deploy as a hosted endpoint (Modal, Render, etc.).
+- ✅ ~~Deploy as a hosted demo~~ — done. Streamlit Community Cloud, web UI in `streamlit_app.py`.
