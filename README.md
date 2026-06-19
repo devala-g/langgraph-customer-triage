@@ -95,7 +95,7 @@ These are stubs that return canned data. In a real deployment, each function bod
 
 ## Sample LangSmith Trace
 
-Every run produces a full trace tree in LangSmith — inputs, outputs, latency, and token count per node. This is what an interviewer or reviewer can use to verify the agent's reasoning end-to-end.
+Every run produces a full trace tree in LangSmith — inputs, outputs, latency, and token count per node.
 
 ![LangSmith trace of one triage run](docs/langsmith-trace.png)
 
