@@ -6,7 +6,7 @@ Built as a working reference for what production-shape agentic workflows look li
 
 ## Live demo
 
-**▶ Try it live: https://&lt;your-app&gt;.streamlit.app** *(hosted free on Streamlit Community Cloud)*
+**▶ Try it live: https://customer-triage-agent.streamlit.app** *(hosted free on Streamlit Community Cloud)*
 
 Paste a support ticket — or pick a sample — and watch it route through the graph node by node: classify → retrieve (Chroma RAG) / ReAct → draft → confidence → auto-send or human review. The same graph in `src/` runs behind a small Streamlit UI in `streamlit_app.py`.
 
