@@ -79,6 +79,7 @@ The web UI deploys free from this repo — no Dockerfile, no server to manage:
 - `src/triage_agent.py` — the full graph (≈140 lines)
 - `src/knowledge_base.py` — knowledge base + Chroma semantic retrieval
 - `src/tools.py` — tools the ReAct sub-agent can call
+- `examples/sema4_action/` — the same tools re-expressed as [Sema4.ai AI Actions](examples/sema4_action/README.md) (companion example)
 - `requirements.txt`
 - `.env.example`
 

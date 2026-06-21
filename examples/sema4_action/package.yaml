@@ -1,0 +1,15 @@
+# Sema4.ai Action Package descriptor.
+# Declares the package and the environment the Action Server would build (via
+# RCC) to run these actions in isolation. On a supported platform you can also
+# just `action-server start` and it builds this env automatically.
+name: Customer Support Triage Actions
+description: >-
+  The triage agent's tools (system status, customer activity lookup) re-expressed
+  as Sema4.ai AI Actions. Companion to the LangGraph demo in the repo root.
+version: 0.1.0
+
+dependencies:
+  conda-forge:
+    - python=3.12.3
+  pypi:
+    - sema4ai-actions=1.6.6
