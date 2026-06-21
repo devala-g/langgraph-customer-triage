@@ -14,7 +14,7 @@ Paste a support ticket — or pick a sample — and watch it route through the g
 
 - **LangGraph for orchestration** — a `StateGraph` with branching logic. Failure modes (and category-specific behavior) are explicit nodes, not exceptions or `if` statements buried inside one big function.
 - **Chroma vector store for RAG** — semantic retrieval over a small knowledge base, filtered by ticket category at query time. The `search()` interface used to be keyword-based; swapping to a vector backend did not require any change to the graph.
-- **ReAct sub-agent for vague tickets** — built with `langgraph.prebuilt.create_react_agent`. When the classifier returns `vague`, the agent enters a Reason → Act → Observe loop over three tools (system status, customer activity lookup, unrestricted KB search) before drafting a reply.
+- **ReAct sub-agent for vague tickets** — built with `langchain.agents.create_agent`. When the classifier returns `vague`, the agent enters a Reason → Act → Observe loop over three tools (system status, customer activity lookup, unrestricted KB search) before drafting a reply.
 - **Tool use via the Claude API** through `langchain-anthropic`.
 - **LangSmith observability** — every run produces a full trace tree with inputs, outputs, latency, and token counts per node. ReAct tool calls appear as nested spans, so you can audit the agent's reasoning step by step.
 - **Simple state model** — `TypedDict` state passes through the graph, mutated by each node.
@@ -138,7 +138,7 @@ In the screenshot above, you can see the full path for one billing ticket as it 
 ## Next steps (would-be features for a real deployment)
 
 - ✅ ~~Swap the in-memory KB for a real vector store~~ — done. Chroma with sentence-transformer embeddings, filtered by category metadata.
-- ✅ ~~Add a ReAct-style sub-agent for vague tickets~~ — done. `langgraph.prebuilt.create_react_agent` with three stubbed tools, branched off the `classify` node.
+- ✅ ~~Add a ReAct-style sub-agent for vague tickets~~ — done. `langchain.agents.create_agent` with three stubbed tools, branched off the `classify` node.
 - Persist the Chroma collection on disk (currently in-memory and rebuilt per process).
 - Replace the mocked tool stubs with real API calls (status page, customer-data service).
 - Replace classification with a fine-tuned smaller model for cost.

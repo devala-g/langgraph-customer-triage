@@ -19,9 +19,7 @@ from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
-from langgraph.prebuilt import create_react_agent  # noqa: keep this import; the
-# `langchain.agents` replacement path suggested by the V1 deprecation warning
-# is not yet a drop-in import in our installed version. Re-evaluate at V2.
+from langchain.agents import create_agent
 
 from knowledge_base import search
 from tools import (
@@ -159,14 +157,14 @@ IDs you used in brackets at the end. Do not make up information that the \
 tools did not return."""
 
 
-_REACT_EXECUTOR = create_react_agent(
+_REACT_EXECUTOR = create_agent(
     model=MODEL,
     tools=[
         get_recent_system_status,
         get_customer_recent_activity,
         search_knowledge_base,
     ],
-    prompt=REACT_SYSTEM_PROMPT,
+    system_prompt=REACT_SYSTEM_PROMPT,
 )
 
 
