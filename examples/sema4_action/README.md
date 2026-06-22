@@ -20,9 +20,9 @@ def get_recent_system_status() -> str:  def get_recent_system_status() -> str:
     return "All services operational…"      return "All services operational…"
 ```
 
-## Run it locally (works on this machine — no RCC needed)
+## Run it locally (works on most machines — no RCC needed)
 
-The Action Server's full runtime depends on RCC, which has no build for macOS
+The Action Server's full runtime depends on RCC, which has no build for certain computers like macOS
 x86_64, so `action-server start` won't run here. But the `sema4ai-actions` runner
 executes actions directly in the current Python environment — perfect for a local
 walkthrough:
